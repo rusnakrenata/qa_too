@@ -1,0 +1,22 @@
+# Ignore Python cache and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+venv/
+.env/
+src/cache
+src/__pycache__
+src/modules/cache
+src/modules/__pycache__
+src/modules/files_csv
+src/modules/files_html
+src/modules/qubo_matrices
+qa_mtc/gurobi.lic
+
+# VS Code settings
+.vscode/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
