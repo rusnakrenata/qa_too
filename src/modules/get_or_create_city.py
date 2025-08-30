@@ -28,7 +28,7 @@ def get_or_create_city(
 
     # Query for existing city
     city = session.query(City).filter_by(**filters).first()
-    print(city)
+    print("EXISTING CITY:", city)
 
     # If not found, build and store
     if city is None:

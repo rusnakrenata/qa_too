@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 # Safe polyline utilities
 # =========================
 
-
 def _normalize_polyline_points(raw: Any) -> List[Tuple[float, float]]:
     """
     Normalize to list[(lon, lat)].
@@ -42,11 +41,7 @@ def _normalize_polyline_points(raw: Any) -> List[Tuple[float, float]]:
         return pts
 
     # single numeric pair
-    if (
-        isinstance(raw, (tuple, list))
-        and len(raw) == 2
-        and all(isinstance(v, (int, float)) for v in raw)
-    ):
+    if isinstance(raw, (tuple, list)) and len(raw) == 2 and all(isinstance(v, (int, float)) for v in raw):
         raw = [raw]
 
     if isinstance(raw, (list, tuple)):
@@ -64,8 +59,7 @@ def _normalize_polyline_points(raw: Any) -> List[Tuple[float, float]]:
                     continue
             elif isinstance(p, (list, tuple)) and len(p) >= 2:
                 try:
-                    a = float(p[0])
-                    b = float(p[1])
+                    a = float(p[0]); b = float(p[1])
                     pts.append((a, b))
                 except Exception:
                     continue
@@ -89,7 +83,6 @@ def _normalize_polyline_points(raw: Any) -> List[Tuple[float, float]]:
 
     return cleaned
 
-
 def _safe_linestring_from_polyline(raw: Any) -> LineString:
     """
     Returns a LineString; returns EMPTY LineString if < 2 coords.
@@ -99,7 +92,6 @@ def _safe_linestring_from_polyline(raw: Any) -> LineString:
     if len(pts) < 2:
         return LineString([])
     return LineString(pts)
-
 
 # =========================
 # Helpers
@@ -113,7 +105,6 @@ def _dedupe_consecutive(seq: List[Any]) -> List[Any]:
             out.append(x)
             prev = x
     return out
-
 
 def get_points_in_time_window(steps, time_step, time_window):
     """
@@ -158,7 +149,6 @@ def get_points_in_time_window(steps, time_step, time_window):
 
     return points
 
-
 def _ordered_nodes_from_edges(edge_seq: List[int], edges_lookup: pd.DataFrame) -> List[str]:
     """
     Given ordered edge_id sequence and lookup ['edge_id','u','v'],
@@ -166,7 +156,7 @@ def _ordered_nodes_from_edges(edge_seq: List[int], edges_lookup: pd.DataFrame) -
     """
     if not edge_seq:
         return []
-    uv = edges_lookup.set_index("edge_id")[["u", "v"]].to_dict("index")
+    uv = edges_lookup.set_index("edge_id")[["u","v"]].to_dict("index")
 
     path_osm_nodes: List[str] = []
     first_u = uv[edge_seq[0]]["u"]
@@ -184,7 +174,6 @@ def _ordered_nodes_from_edges(edge_seq: List[int], edges_lookup: pd.DataFrame) -
             path_osm_nodes.extend([cu, cv])
 
     return _dedupe_consecutive(path_osm_nodes)
-
 
 def _build_route_line_from_steps(steps) -> LineString:
     """
@@ -204,7 +193,6 @@ def _build_route_line_from_steps(steps) -> LineString:
             coords.extend(gcoords[1:] if coords and gcoords and coords[-1] == gcoords[0] else gcoords)
     return LineString(coords) if len(coords) >= 2 else LineString([])
 
-
 def _edges_from_node_sequence(
     osm_node_seq: List[str],
     edges_gdf: gpd.GeoDataFrame,        # needs ['edge_id','u','v','geometry'] in EPSG:4326
@@ -222,15 +210,12 @@ def _edges_from_node_sequence(
     transformer_to_proj = Transformer.from_crs("EPSG:4326", edges_proj.crs, always_xy=True)
     path_proj = transform(lambda x, y, z=None: transformer_to_proj.transform(x, y), path_geom_wgs84)
 
-    edges = edges_gdf[['edge_id', 'u', 'v', 'geometry']].reset_index(drop=True)
+    edges = edges_gdf[['edge_id','u','v','geometry']].reset_index(drop=True)
     edges_proj = edges_proj.reset_index(drop=True)
 
     final_edge_ids: List[int] = []
     for a, b in zip(osm_node_seq[:-1], osm_node_seq[1:]):
-        cand = edges[
-            ((edges['u'] == a) & (edges['v'] == b)) |
-            ((edges['u'] == b) & (edges['v'] == a))
-        ]
+        cand = edges[((edges['u'] == a) & (edges['v'] == b)) | ((edges['u'] == b) & (edges['v'] == a))]
         if cand.empty:
             continue
         if len(cand) == 1 or path_proj.is_empty:
@@ -250,7 +235,6 @@ def _edges_from_node_sequence(
 
     return _dedupe_consecutive(final_edge_ids)
 
-
 # =========================
 # Worker
 # =========================
@@ -262,17 +246,16 @@ def _process_one_vehicle(
     edges_gdf: gpd.GeoDataFrame,
     nodes_gdf: gpd.GeoDataFrame,
     time_step: int,
-    time_window: int
+    time_window: int,
+    sample_mode: str = "step_begin"
 ) -> Dict[str, Any] | None:
 
     if not route_list:
         return None
 
     edges_proj = edges_proj_dict['edges']
-    edge_geometries = [
-        geom if isinstance(geom, BaseGeometry) else geom.__geo_interface__
-        for geom in edges_proj['geometry'].values.tolist()
-    ]
+    edge_geometries = [geom if isinstance(geom, BaseGeometry) else geom.__geo_interface__
+                       for geom in edges_proj['geometry'].values.tolist()]
     edge_tree = STRtree(edge_geometries)
     transformer = Transformer.from_crs("EPSG:4326", edges_proj_dict['crs'], always_xy=True)
 
@@ -284,7 +267,28 @@ def _process_one_vehicle(
     steps = convert_valhalla_leg_to_google_like_steps(route['leg'])
 
     # A) time-sampled points (safe) -> sampled edges
-    points = get_points_in_time_window(steps, time_step, time_window)
+
+    if sample_mode == "time":
+        points = get_points_in_time_window(steps, time_step, time_window)
+    elif sample_mode == "step_begin":
+        # Sample the beginning of each step
+        points = []
+        time_acc = 0
+        for step in steps:
+            ls = _safe_linestring_from_polyline(step['polyline']['points'])
+            if ls.is_empty:
+                continue
+            point_on_line = get_point_on_line(ls, 0.0)
+            duration = step['duration']['value']
+            points.append({
+                'location': point_on_line,
+                'time': time_acc,
+                'speed': step['distance']['value'] / max(duration, 1e-9)
+            })
+            time_acc += duration
+    else:
+        raise ValueError(f"Unknown sample_mode: {sample_mode}")
+
     if not points:
         return None
 
@@ -302,7 +306,7 @@ def _process_one_vehicle(
         logger.error("edges_gdf must include columns ['edge_id','u','v'] to compute node path.")
         osm_node_seq: List[str] = []
     else:
-        edges_lookup = edges_gdf[['edge_id', 'u', 'v']].copy()
+        edges_lookup = edges_gdf[['edge_id','u','v']].copy()
         osm_node_seq = _ordered_nodes_from_edges(sampled_edge_seq, edges_lookup)
 
     # C) build a continuous route line (safe) for overlap disambiguation
@@ -318,8 +322,8 @@ def _process_one_vehicle(
 
     # E) map OSM node ids -> DB node_id
     path_node_ids: List[int] = []
-    if {'node_id', 'osmid'}.issubset(nodes_gdf.columns):
-        osmid_to_nodeid = nodes_gdf[['osmid', 'node_id']].drop_duplicates().set_index('osmid')['node_id']
+    if {'node_id','osmid'}.issubset(nodes_gdf.columns):
+        osmid_to_nodeid = nodes_gdf[['osmid','node_id']].drop_duplicates().set_index('osmid')['node_id']
         for osm_id in osm_node_seq:
             if osm_id in osmid_to_nodeid.index:
                 path_node_ids.append(int(osmid_to_nodeid.loc[osm_id]))
@@ -335,11 +339,9 @@ def _process_one_vehicle(
         "path_node_ids": path_node_ids
     }
 
-
 # top-level star helper (picklable)
 def _process_one_vehicle_star(args):
     return _process_one_vehicle(*args)
-
 
 # =========================
 # Main
@@ -356,7 +358,7 @@ def generate_vehicle_routes(
     time_step: int,
     time_window: int,
     max_concurrent: int = 20,
-    use_threads_on_windows: bool = False  # default True to avoid ProcessPool pickling issues
+    use_threads_on_windows: bool = False   # default True to avoid ProcessPool pickling issues
 ) -> pd.DataFrame:
     """
     - EXACTLY one route per vehicle
@@ -365,17 +367,17 @@ def generate_vehicle_routes(
     """
     try:
         # validate
-        vcols = {"vehicle_id", "origin_lat", "origin_lon", "destination_lat", "destination_lon"}
+        vcols = {"vehicle_id","origin_lat","origin_lon","destination_lat","destination_lon"}
         if vehicles_df is None or vehicles_df.empty or not vcols.issubset(vehicles_df.columns):
             logger.error(f"vehicles_df must include {vcols}.")
             return pd.DataFrame()
 
-        ecols = {"edge_id", "u", "v", "geometry"}
+        ecols = {"edge_id","u","v","geometry"}
         if edges_gdf is None or edges_gdf.empty or not ecols.issubset(edges_gdf.columns):
             logger.error("edges_gdf must include ['edge_id','u','v','geometry'] in EPSG:4326.")
             return pd.DataFrame()
 
-        ncols = {"node_id", "osmid", "geometry"}
+        ncols = {"node_id","osmid","geometry"}
         if nodes_gdf is None or nodes_gdf.empty or not ncols.issubset(nodes_gdf.columns):
             logger.error("nodes_gdf must include ['node_id','osmid','geometry'] in EPSG:4326.")
             return pd.DataFrame()
@@ -389,7 +391,7 @@ def generate_vehicle_routes(
                 async def fetch(row):
                     async with sem:
                         origin = (float(row["origin_lon"]), float(row["origin_lat"]))  # (lon, lat)
-                        dest = (float(row["destination_lon"]), float(row["destination_lat"]))
+                        dest   = (float(row["destination_lon"]), float(row["destination_lat"]))
                         return await async_get_routes_from_valhalla(http_session, origin, dest, 1)
                 tasks = [fetch(row) for _, row in vdf.iterrows()]
                 return await asyncio.gather(*tasks)
@@ -412,13 +414,15 @@ def generate_vehicle_routes(
 
         logger.info("Processing vehicle routes (edge/node paths)...")
         t1 = time.time()
+
         if use_threads_on_windows:
             with ThreadPoolExecutor(max_workers=min(16, multiprocessing.cpu_count())) as executor:
                 results = list(executor.map(_process_one_vehicle_star, vehicle_data_list))
         else:
             with ProcessPoolExecutor(max_workers=min(16, multiprocessing.cpu_count())) as executor:
-                #print(vehicle_data_list)
+                print(vehicle_data_list)
                 results = list(executor.map(_process_one_vehicle_star, vehicle_data_list))
+
         logger.info(f"Processing completed in {time.time() - t1:.2f} seconds")
 
         rows = [r for r in results if r is not None]
@@ -444,10 +448,7 @@ def generate_vehicle_routes(
         session.commit()
         logger.info(f"Stored {len(route_objs)} vehicle routes with edge/node paths.")
 
-        return pd.DataFrame(
-            rows,
-            columns=['vehicle_id', 'route_id', 'duration', 'distance', 'path_edge_ids', 'path_node_ids']
-        )
+        return pd.DataFrame(rows, columns=['vehicle_id','route_id','duration','distance','path_edge_ids','path_node_ids'])
 
     except Exception as e:
         logger.error(f"Error in generate_vehicle_routes: {e}", exc_info=True)

@@ -1,6 +1,7 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey, Float, JSON, DateTime, BigInteger, Numeric, Boolean, desc, text, Numeric, Index, PrimaryKeyConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Numeric, Text, ForeignKey, Float, JSON, DateTime, BigInteger, Numeric, Boolean, desc, text, Numeric, Index, PrimaryKeyConstraint
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from datetime import datetime
+from decimal import Decimal
 import logging
 
 logger = logging.getLogger(__name__)
@@ -114,25 +115,6 @@ class VehicleRoute(Base):
     )
 
 
-class CongestionMap(Base):
-    """CongestionMap table: stores pairwise congestion scores."""
-    __tablename__ = 'congestion_map'
-    congestion_map_id = Column(Integer, primary_key=True)
-    run_configs_id = Column(Integer,  nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    edge_id = Column(Integer,  nullable=False)
-    vehicle1 = Column(Integer,  nullable=False)
-    vehicle1_route = Column(Integer, nullable=False)
-    vehicle2 = Column(Integer,  nullable=False)
-    vehicle2_route = Column(Integer, nullable=False)
-    congestion_score = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        Index('idx_cm_cfg_iter_v1', 'run_configs_id', 'iteration_id', 'vehicle1', 'vehicle1_route'),
-        Index('idx_cm_cfg_iter_v2', 'run_configs_id', 'iteration_id', 'vehicle2', 'vehicle2_route'),
-        Index('idx_cm_cfg_iter_edge', 'run_configs_id', 'iteration_id', 'edge_id'),
-    )
-
 class QAResult(Base):
     """QAResult table: stores results of QUBO/QA optimization runs."""
     __tablename__ = 'qa_results'
@@ -141,20 +123,15 @@ class QAResult(Base):
     iteration_id = Column(Integer, nullable=False)
     lambda_value = Column(Float)
     comp_type = Column(String(50))
-    num_reads = Column(Integer)
-    n_vehicles = Column(Integer)
-    k_alternatives = Column(Integer)
-    vehicle_ids = Column(JSON)
-    assignment_valid = Column(Integer)
+    num_reads = Column(Integer)    
     assignment = Column(JSON)
+    n_nodes_distinct = Column(Integer, nullable=True)  # Number of distinct nodes
+    overall_overlap = Column(Integer, nullable=True)  # Overall overlap
     energy = Column(Float)
     duration = Column(Float)
     solver_time = Column(Float)
-    qubo_path = Column(String(255))
-    qubo_size = Column(Integer)
-    qubo_density = Column(Float)
-    cluster_id = Column(Integer)
-    invalid_assignment_vehicles = Column(String(2000), nullable=True)
+    n_vehicles_selected = Column(Integer, nullable=True)  # Number of selected vehicles
+    selected_vehicle_ids = Column(JSON, nullable=True)  # List of selected vehicle IDs
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class QuboRunStats(Base):
@@ -162,214 +139,37 @@ class QuboRunStats(Base):
     qubo_run_stats_id = Column(Integer, primary_key=True, autoincrement=True)
     run_configs_id = Column(Integer, nullable=False)
     iteration_id = Column(Integer, nullable=False)
-    cluster_id = Column(Integer, nullable=False)
-    filtering_percentage = Column(Float, nullable=True)
-    cluster_resolution = Column(Float, nullable=True)  # Resolution of clustering
     n_vehicles = Column(Integer, nullable=False)
-    n_filtered_vehicles = Column(Integer, nullable=False)
-    max_weight = Column(Float, nullable=True)  # Maximum weight of the QUBO matrix
+    lambda_penalty = Column(Float, nullable=False)
+    max_weight_cvv = Column(Float, nullable=True)  # Maximum weight of the QUBO matrix
+    max_weight_cvw = Column(Float, nullable=True)  # Maximum weight of the QUBO matrix
+    n_nodes_distinct = Column(Integer, nullable=True)  # Number of distinct nodes
+    overall_overlap = Column(Integer, nullable=True)  # Overall overlap
     created_at = Column(DateTime, default=datetime.utcnow)
 
-class CongestionSummary(Base):
-    """Stores per-edge congestion results for all, post-QA, shortest-duration, and shortest-distance congestion."""
-    __tablename__ = 'congestion_summary'
-    congestion_summary_id = Column(Integer, primary_key=True, autoincrement=True)
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    edge_id = Column(Integer, nullable=False)
-    congestion_all = Column(Float, nullable=True)
-    congestion_post_qa = Column(Float, nullable=True)
-    congestion_post_sa = Column(Float, nullable=True)
-    congestion_post_tabu = Column(Float, nullable=True)
-    congestion_shortest_dur = Column(Float, nullable=True)
-    congestion_shortest_dis = Column(Float, nullable=True)
-    congestion_random = Column(Float, nullable=True)
-    congestion_post_gurobi = Column(Float, nullable=True)
-    congestion_post_cbc = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
-class QASelectedRoute(Base):
-    """SelectedRoute table: stores the routes selected by QA optimization for each vehicle."""
-    __tablename__ = 'qa_selected_routes'
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_qa_selected_routes', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
-
-class RandomRoute(Base):
-    """SelectedRoute table: stores the routes selected by QA optimization for each vehicle."""
-    __tablename__ = 'random_routes'
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_random_routes', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
 
 class GurobiResult(Base):
     __tablename__ = 'gurobi_results'
     gurobi_result_id = Column(Integer, primary_key=True)
     run_configs_id = Column(Integer, nullable=False)
     iteration_id = Column(Integer, nullable=False)
+    lambda_value = Column(Float)
     assignment = Column(JSON)  # Store variable assignment as JSON
+    n_nodes_distinct = Column(Integer, nullable=True)  # Number of distinct nodes
+    overall_overlap = Column(Integer, nullable=True)  # Overall overlap 
     objective_value = Column(Float)
     duration = Column(Float)
     solver_time = Column(Float)
     best_bound = Column(Float)       
     gap = Column(Float)     
-    cluster_id = Column(Integer)
     time_limit_seconds = Column(Integer, nullable=True)  # Time limit in seconds
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class GurobiRoute(Base):
-    """SelectedRoute table: stores the routes selected by QA optimization for each vehicle."""
-    __tablename__ = 'gurobi_routes'
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_gurobi_routes', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
-
-
-class ShortestRouteDur(Base):
-    __tablename__ = "shortest_routes_duration"
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_shortest_routes_dur', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
-
-
-
-class ShortestRouteDis(Base):
-    __tablename__ = "shortest_routes_distance"
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_shortest_routes_dis', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
-
-
-class ObjectiveValue(Base):
-    __tablename__ = "objective_values"
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    method = Column(String(32), nullable=False)  # 'qa', 'gurobi', 'random', etc.
-    objective_value = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'method'),
-    )
-
-
-class SaResult(Base):
-    __tablename__ = 'sa_results'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    num_reads = Column(Integer, nullable=False)
-    n_vehicles = Column(Integer, nullable=False)
-    k_alternatives = Column(Integer, nullable=False)
-    vehicle_ids = Column(JSON, nullable=False)
-    assignment_valid = Column(Boolean, nullable=False)
-    assignment = Column(JSON, nullable=False)
-    energy = Column(Float, nullable=False)
-    duration = Column(Float, nullable=False)
-    solver_time = Column(Float, nullable=False)
-    invalid_assignment_vehicles = Column(String(2000), nullable=True)
-    cluster_id = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
-# Create all tables if they do not exist
-
-
-
-class SaSelectedRoute(Base):
-    __tablename__ = 'sa_selected_routes'
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_sa_selected_routes', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
-
-class TabuResult(Base):
-    __tablename__ = 'tabu_results'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    num_reads = Column(Integer, nullable=False)
-    n_vehicles = Column(Integer, nullable=False)
-    k_alternatives = Column(Integer, nullable=False)
-    vehicle_ids = Column(JSON, nullable=False)
-    assignment_valid = Column(Boolean, nullable=False)
-    assignment = Column(JSON, nullable=False)
-    energy = Column(Float, nullable=False)
-    duration = Column(Float, nullable=False)
-    solver_time = Column(Float, nullable=False)
-    invalid_assignment_vehicles = Column(String(2000), nullable=True)
-    cluster_id = Column(Integer)
+    n_vehicles_selected = Column(Integer, nullable=True)  # Number of selected vehicles
+    selected_vehicle_ids = Column(JSON, nullable=True)  # List of selected vehicle IDs
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class TabuSelectedRoute(Base):
-    __tablename__ = 'tabu_selected_routes'
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_sa_selected_routes', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
 
-class CbcResult(Base):
-    __tablename__ = 'cbc_results'
-
-    id = Column(Integer, primary_key=True)
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    assignment = Column(JSON, nullable=False)
-    objective_value = Column(Float)
-    duration = Column(Float)
-    solver_time = Column(Float)
-    status = Column(String(50), nullable=True)  # Status of the CBC solver
-    cluster_id = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class CbcRoute(Base):
-    __tablename__ = 'cbc_routes'
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    vehicle_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
-        Index('idx_run_iter_cbc_routes', 'run_configs_id', 'iteration_id', 'vehicle_id')
-    )
 
 Base.metadata.create_all(engine)
 """

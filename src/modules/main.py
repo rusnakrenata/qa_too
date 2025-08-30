@@ -20,6 +20,10 @@ from generate_vehicle_routes import generate_vehicle_routes
 
 from plot_vehicles import plot_vehicles
 from plot_vehicle_routes import plot_vehicle_routes
+from compute_weights import compute_qubo_overlap_weights
+from qubo_matrix import qubo_matrix
+from qa_testing import qa_testing
+from gurobi_testing import gurobi_testing
 
 
 # ---------- CONSTANTS ----------
@@ -43,23 +47,36 @@ def main():
         with create_db_session() as session:
             logger.info("Start workflow: %s", start)
 
-            city_id, edges_df, nodes_df = get_or_create_city(session, city_name=CITY_NAME,
-                                                center_coords=CENTER_COORDS,
-                                                radius_km=RADIUS_KM)
+            # Ensure output directory exists
+            MAPS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-            run_config = get_or_create_run_config(session, city_id=city_id,
-                                        config_class=RunConfig,
-                                        n_vehicles=N_VEHICLES,
-                                        route_alternatives=K_ALTERNATIVES,
-                                        min_length=MIN_LENGTH,
-                                        max_length=MAX_LENGTH)
-            iteration_id = create_iteration(session, run_config_id=run_config.run_configs_id,
-                                provided_iteration_id=None, iteration_class=Iteration)
-            
+            city_id, edges_df, nodes_df = get_or_create_city(
+                session,
+                city_name=CITY_NAME,
+                center_coords=CENTER_COORDS,
+                radius_km=RADIUS_KM
+            )
+
+            run_config = get_or_create_run_config(
+                session,
+                city_id=city_id,
+                config_class=RunConfig,
+                n_vehicles=N_VEHICLES,
+                route_alternatives=K_ALTERNATIVES,
+                min_length=MIN_LENGTH,
+                max_length=MAX_LENGTH
+            )
+
+            iteration_id = create_iteration(
+                session,
+                run_config_id=run_config.run_configs_id,
+                provided_iteration_id=None,
+                iteration_class=Iteration
+            )
+
             edges_gdf = gpd.GeoDataFrame(edges_df)
             nodes_gdf = gpd.GeoDataFrame(nodes_df)
 
-            # when you enable generation:
             vehicles_df = generate_vehicles(
                 session=session,
                 run_config_id=run_config.run_configs_id,
@@ -69,37 +86,108 @@ def main():
                 n_vehicles=N_VEHICLES,
                 min_length=MIN_LENGTH,
                 max_length=MAX_LENGTH
-)
-            m = plot_vehicles(
-            edges_gdf=edges_gdf,
-            vehicles_df=vehicles_df,   # DataFrame with lat/lon columns
-            show_od_lines=False
             )
-            m.save("city_vehicles.html")
+
+            m = plot_vehicles(
+                edges_gdf=edges_gdf,
+                vehicles_df=vehicles_df,
+                show_od_lines=False
+            )
+            m.save(MAPS_OUTPUT_DIR / f"city_vehicles_{run_config.run_configs_id}_{iteration_id}.html")
 
             vehicle_routes_df = generate_vehicle_routes(
                 session=session,
                 run_config_id=run_config.run_configs_id,
                 iteration_id=iteration_id,
-                route_class=VehicleRoute,         # from models.py
-                vehicles_df=vehicles_df,          # has lat/lon columns
-                edges_gdf=edges_gdf,              # edge_id, geometry (EPSG:4326)
-                nodes_gdf=nodes_gdf,              # node_id, geometry (EPSG:4326)
+                route_class=VehicleRoute,
+                vehicles_df=vehicles_df,
+                edges_gdf=edges_gdf,
+                nodes_gdf=nodes_gdf,
                 time_step=TIME_STEP,
                 time_window=TIME_WINDOW,
                 max_concurrent=20
-
             )
-           
+
             mp = plot_vehicle_routes(
                 edges_gdf=edges_gdf,
                 nodes_gdf=nodes_gdf,
                 vehicle_routes_df=vehicle_routes_df,
-                vehicles_df=vehicles_df,       # pass None to skip O/D dots
-                show_route_nodes=True,         # turn on to see node dots
+                vehicles_df=vehicles_df,
+                show_route_nodes=True,
                 zoom_start=14
             )
-            mp.save("vehicle_routes.html")
+            mp.save(MAPS_OUTPUT_DIR / f"vehicle_routes_{run_config.run_configs_id}_{iteration_id}.html")
+
+            diag, offdiag, max_weight_cvw, max_weight_cvv, n_nodes_distinct, overall_overlap = compute_qubo_overlap_weights(
+                vehicle_routes_df, node_column="path_node_ids"
+            )
+
+            lambda_value = 1
+            lambda_values = [0.5, 1, 1.5]
+
+            for lambda_penalty in lambda_values:
+                Q, variables, index_of = qubo_matrix(
+                    session=session,
+                    run_configs_id=run_config.run_configs_id,
+                    iteration_id=iteration_id,
+                    diag=diag,
+                    offdiag=offdiag,
+                    max_weight_cvv=max_weight_cvv,
+                    max_weight_cvw=max_weight_cvw,
+                    n_nodes_distinct=n_nodes_distinct,
+                    overall_overlap=overall_overlap,
+                    lambda_penalty=lambda_penalty
+                )
+
+                qa_results = qa_testing(
+                    session=session,
+                    run_configs_id=run_config.run_configs_id,
+                    iteration_id=iteration_id,
+                    Q=Q,
+                    vehicle_routes_df=vehicle_routes_df,
+                    lambda_value=lambda_penalty,
+                    comp_type=COMP_TYPE,
+                    num_reads=10
+                )
+
+                time_limit = qa_results["solver_time"]
+
+                gurobi_vehicles, objective_value = gurobi_testing(
+                    session=session,
+                    run_configs_id=run_config.run_configs_id,
+                    iteration_id=iteration_id,
+                    Q=Q,
+                    vehicle_routes_df=vehicle_routes_df,
+                    lambda_value=lambda_penalty,
+                    time_limit_seconds=time_limit
+                )
+
+                suffix = f"{run_config.run_configs_id}_{iteration_id}_lambda{lambda_penalty:.2f}"
+
+                mp_qa = plot_vehicle_routes(
+                    edges_gdf=edges_gdf,
+                    nodes_gdf=nodes_gdf,
+                    vehicle_routes_df=vehicle_routes_df,
+                    vehicles_df=vehicles_df,
+                    show_route_nodes=True,
+                    show_route_edges=True,
+                    zoom_start=5,
+                    selected_vehicle_ids=qa_results["selected_vehicle_ids"]
+                )
+                mp_qa.save(MAPS_OUTPUT_DIR / f"vehicle_routes_qa_{suffix}.html")
+
+                mp_gurobi = plot_vehicle_routes(
+                    edges_gdf=edges_gdf,
+                    nodes_gdf=nodes_gdf,
+                    vehicle_routes_df=vehicle_routes_df,
+                    vehicles_df=vehicles_df,
+                    show_route_nodes=True,
+                    show_route_edges=True,
+                    zoom_start=5,
+                    selected_vehicle_ids=gurobi_vehicles
+                )
+                mp_gurobi.save(MAPS_OUTPUT_DIR / f"vehicle_routes_gurobi_{suffix}.html")
+
             logger.info("Workflow finished!")
 
     except Exception as e:
@@ -108,5 +196,5 @@ def main():
         logger.info("Total duration: %s", datetime.now() - start)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()
