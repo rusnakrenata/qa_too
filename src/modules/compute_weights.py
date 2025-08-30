@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple, Union, Any, Optional
 import ast
-from collections import defaultdict
+from collections import Counter, defaultdict
 from itertools import combinations
 import logging
 import time
@@ -94,8 +94,19 @@ def compute_qubo_overlap_weights(
         var_nodes[var] = nodes
 
     # Diagonal weights: number of nodes per route
-    diag: Dict[Tuple[Any, Any], int] = {var: len(nodes) for var, nodes in var_nodes.items()}
+    #diag: Dict[Tuple[Any, Any], int] = {var: len(nodes) for var, nodes in var_nodes.items()}
+   
+   # --- UNIQUE-ONLY DIAGONAL ---
+    # Build global node frequency across all routes, then count per-route uniques.  # NEW
+    freq = Counter()
+    for nodes in var_nodes.values():
+        freq.update(nodes)  # each node counted once per route because we deduplicated
 
+    # Diagonal weights: number of nodes on the route that are unique across all routes (freq == 1).  # CHANGED
+    diag: Dict[Tuple[Any, Any], int] = {
+        var: sum(1 for n in nodes if freq[n] == 1)
+        for var, nodes in var_nodes.items()
+    }
     # Inverted index: node -> variables that contain it
     index: Dict[Any, List[Tuple[Any, Any]]] = defaultdict(list)
     for var, nodes in var_nodes.items():

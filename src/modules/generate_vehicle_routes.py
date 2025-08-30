@@ -323,6 +323,7 @@ def _process_one_vehicle(
         for osm_id in osm_node_seq:
             if osm_id in osmid_to_nodeid.index:
                 path_node_ids.append(int(osmid_to_nodeid.loc[osm_id]))
+        path_node_ids = _dedupe_consecutive(path_node_ids)
     else:
         logger.error("nodes_gdf must include ['node_id','osmid'] to map path nodes to DB IDs.")
 

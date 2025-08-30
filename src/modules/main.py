@@ -123,10 +123,10 @@ def main():
             )
 
             lambda_value = 1
-            lambda_values = [0.5, 1, 1.5]
+            lambda_values = [0.5]
 
             for lambda_penalty in lambda_values:
-                Q, variables, index_of = qubo_matrix(
+                Q, lambda_penalty = qubo_matrix(
                     session=session,
                     run_configs_id=run_config.run_configs_id,
                     iteration_id=iteration_id,
@@ -136,8 +136,9 @@ def main():
                     max_weight_cvw=max_weight_cvw,
                     n_nodes_distinct=n_nodes_distinct,
                     overall_overlap=overall_overlap,
-                    lambda_penalty=lambda_penalty
+                    lambda_penalty=None # calculated inside function if None
                 )
+                print("lambda penalty:", lambda_penalty)
 
                 qa_results = qa_testing(
                     session=session,
