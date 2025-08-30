@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 DB_USER = os.getenv("DB_USER", "trafficOpti")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "P4ssw0rd")
 DB_HOST = os.getenv("DB_HOST", "147.232.204.254")
-DB_NAME = os.getenv("DB_NAME", "trafficOptimization")
+DB_NAME = os.getenv("DB_NAME", "trafficOverlap")
 
 # Choose driver (mysqldb or pymysql)
 DB_DRIVER = os.getenv("DB_DRIVER", "mysql+mysqldb")

@@ -28,9 +28,6 @@ class City(Base):
     center_lon = Column(Numeric(9, 6), nullable=True)  # Center longitude for city subset
     radius_km = Column(Float, nullable=True)  # Radius in km for city subset
     is_subset = Column(Boolean, default=False)  # Whether this is a city subset
-    attraction_lat = Column(Numeric(9, 6), nullable=True)  # Attraction point latitude
-    attraction_lon = Column(Numeric(9, 6), nullable=True)  # Attraction point longitude
-    d_alternatives = Column(Integer, nullable=True)  # Number of route alternatives
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Node(Base):
@@ -75,23 +72,21 @@ class RunConfig(Base):
     k_alternatives = Column(Integer)
     min_length = Column(Integer)
     max_length = Column(Integer)
-    time_step = Column(Integer, nullable=False)
-    time_window = Column(Integer, nullable=False)
-    distance_factor = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
 class Vehicle(Base):
-    """Vehicle table: stores vehicle metadata."""
+    """Vehicle table: vehicles starting/ending at nodes."""
     __tablename__ = 'vehicles'
-    vehicle_id = Column(BigInteger, nullable=False) 
-    run_configs_id = Column(Integer,  nullable=False)  # Link to RunConfig
-    iteration_id = Column(Integer, nullable=False) 
-    origin_edge_id = Column(Integer, nullable=False)
-    origin_position_on_edge = Column(Float)
-    origin_geometry = Column(String(255), nullable=True)
-    destination_edge_id = Column(Integer, nullable=False)
-    destination_position_on_edge = Column(Float)
-    destination_geometry = Column(String(255), nullable=True)
+    vehicle_id = Column(BigInteger, nullable=False)
+    run_configs_id = Column(Integer, nullable=False)  # Link to RunConfig
+    iteration_id = Column(Integer, nullable=False)
+    origin_node_id = Column(Integer, nullable=False)
+    destination_node_id = Column(Integer, nullable=False)
+    origin_lat = Column(Numeric(9, 6), nullable=False)
+    origin_lon = Column(Numeric(9, 6), nullable=False)
+    destination_lat = Column(Numeric(9, 6), nullable=False)
+    destination_lon = Column(Numeric(9, 6), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (
         PrimaryKeyConstraint('vehicle_id', 'run_configs_id', 'iteration_id'),
@@ -108,33 +103,16 @@ class VehicleRoute(Base):
     duration = Column(Integer)
     distance = Column(Integer)
     duration_in_traffic = Column(Integer)
+       # NEW: full path as IDs for later joins
+    path_edge_ids = Column(JSON, nullable=True)   # list[int]
+    path_node_ids = Column(JSON, nullable=True)   # list[int]
+
     created_at = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (
         PrimaryKeyConstraint('run_configs_id', 'iteration_id', 'vehicle_id', 'route_id'),
         Index('idx_run_iter_vehicle_method', 'run_configs_id', 'iteration_id', 'vehicle_id')
     )
 
-class RoutePoint(Base):
-    """RoutePoint table: stores points along each vehicle route."""
-    __tablename__ = 'route_points'
-    vehicle_id = Column(Integer, nullable=False)
-    run_configs_id = Column(Integer, nullable=False)
-    iteration_id = Column(Integer, nullable=False)
-    route_id = Column(Integer, nullable=False)
-    point_id = Column(Integer, nullable=False)
-    edge_id = Column(Integer, nullable=False)
-    cardinal = Column(String(255), nullable=True)
-    speed = Column(Float)
-    lat = Column(Numeric(9, 6))
-    lon = Column(Numeric(9, 6))
-    time = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    __table_args__ = (
-        PrimaryKeyConstraint(
-            'run_configs_id', 'iteration_id', 
-            'edge_id', 'vehicle_id', 'route_id', 'point_id', 'time' ),
-        Index('edge_id', 'time', 'cardinal', 'vehicle_id','lat','lon')
-    )
 
 class CongestionMap(Base):
     """CongestionMap table: stores pairwise congestion scores."""

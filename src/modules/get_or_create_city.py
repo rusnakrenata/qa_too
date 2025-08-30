@@ -9,8 +9,6 @@ def get_or_create_city(
     city_name: str,
     center_coords: tuple | None = None,
     radius_km: float | None = None,
-    attraction_point: tuple | None = None,
-    d_alternatives: int | None = None,
 ) -> Any:
     """
     Get or create a city (full or subset) in the database.
@@ -18,7 +16,7 @@ def get_or_create_city(
     """
 
     # Build filters only for provided values
-    is_subset = any(v is not None for v in (center_coords, attraction_point, radius_km, d_alternatives))
+    is_subset = any(v is not None for v in (center_coords, radius_km))
     filters = {"name": city_name, "is_subset": is_subset}
 
     if center_coords is not None:
@@ -26,14 +24,11 @@ def get_or_create_city(
         filters["center_lon"] = center_coords[1]
     if radius_km is not None:
         filters["radius_km"] = radius_km
-    if attraction_point is not None:
-        filters["attraction_lat"] = attraction_point[0]
-        filters["attraction_lon"] = attraction_point[1]
-    if d_alternatives is not None:
-        filters["d_alternatives"] = d_alternatives
+
 
     # Query for existing city
     city = session.query(City).filter_by(**filters).first()
+    print(city)
 
     # If not found, build and store
     if city is None:
@@ -47,10 +42,9 @@ def get_or_create_city(
             Node=Node,
             Edge=Edge,
             center_coords=center_coords,
-            radius_km=radius_km,
-            attraction_point=attraction_point,
-            d_alternatives=d_alternatives,
+            radius_km=radius_km
         )
+        session.commit()
         #city = session.query(City).filter_by(**filters).first()
 
     # Now it's safe to load from DB using city.city_id
@@ -60,4 +54,4 @@ def get_or_create_city(
     city_id = city.city_id
 
     # Don't close the session here; let the caller manage it.
-    return city_id, edges_df
+    return city_id, edges_df, nodes_df

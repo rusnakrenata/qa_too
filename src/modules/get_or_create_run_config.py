@@ -10,10 +10,7 @@ def get_or_create_run_config(
     n_vehicles: int,
     route_alternatives: int,
     min_length: int,
-    max_length: int,
-    time_step: int,
-    time_window: int,
-    distance_factor: float
+    max_length: int
 ) -> Any:
     """
     Get or create a run configuration in the database, including distance_factor.
@@ -39,10 +36,7 @@ def get_or_create_run_config(
             n_vehicles=n_vehicles,
             k_alternatives=route_alternatives,
             min_length=min_length,
-            max_length=max_length,
-            time_step=time_step,
-            time_window=time_window,
-            distance_factor=distance_factor
+            max_length=max_length
         ).first()
 
         if existing_run:
@@ -54,10 +48,7 @@ def get_or_create_run_config(
                 n_vehicles=n_vehicles,
                 k_alternatives=route_alternatives,
                 min_length=min_length,
-                max_length=max_length,
-                time_step=time_step,
-                time_window=time_window,
-                distance_factor=distance_factor
+                max_length=max_length
             )
             session.add(run_config)
             session.commit()

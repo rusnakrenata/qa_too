@@ -14,9 +14,7 @@ def store_city_to_db(
     Node: Any,
     Edge: Any,
     center_coords: Optional[Tuple[float, float]] = None,
-    radius_km: Optional[float] = None,
-    attraction_point: Optional[Tuple[float, float]] = None,
-    d_alternatives: Optional[int] = None
+    radius_km: Optional[float] = None
 ) -> Any:
     """
     Store city, nodes, and edges into the database, including attraction points and route alternatives.
@@ -29,8 +27,7 @@ def store_city_to_db(
         City, Node, Edge: SQLAlchemy models.
         center_coords: Optional (lat, lon) for city subset.
         radius_km: Optional radius for city subset.
-        attraction_point: Optional (lat, lon) for city attraction.
-        d_alternatives: Optional number of alternative routes to consider.
+
 
     Returns:
         city: The created City object.
@@ -44,9 +41,7 @@ def store_city_to_db(
         center_lat = center_coords[0] if center_coords else None
         center_lon = center_coords[1] if center_coords else None
 
-        attraction_lat = attraction_point[0] if attraction_point else None
-        attraction_lon = attraction_point[1] if attraction_point else None
-
+  
         city = City(
             name=city_name,
             node_count=node_count,
@@ -55,9 +50,6 @@ def store_city_to_db(
             center_lon=center_lon,
             radius_km=radius_km,
             is_subset=is_subset,
-            attraction_lat=attraction_lat,
-            attraction_lon=attraction_lon,
-            d_alternatives=d_alternatives,
             created_at=datetime.utcnow()
         )
         session.add(city)
@@ -86,9 +78,9 @@ def store_city_to_db(
         session.commit()
 
         if is_subset:
-            logger.info(f"City subset '{city_name}' stored with {node_count} nodes, {edge_count} edges, attraction at ({attraction_lat}, {attraction_lon}), and {d_alternatives} alternatives.")
+            logger.info(f"City subset '{city_name}' stored with {node_count} nodes, {edge_count} edges.")
         else:
-            logger.info(f"City '{city_name}' stored with {node_count} nodes, {edge_count} edges, attraction at ({attraction_lat}, {attraction_lon}), and {d_alternatives} alternatives.")
+            logger.info(f"City '{city_name}' stored with {node_count} nodes, {edge_count} edges.")
 
         return city
 
